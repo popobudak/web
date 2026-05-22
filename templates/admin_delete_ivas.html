@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hapus Semua Akun IVAS</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h2>🗑 Hapus Semua Akun IVAS</h2>
+    
+    {% if success %}
+        <p class="success">✅ Berhasil menghapus {{ deleted_count }} akun IVAS milik Owner ID: {{ owner_id }}</p>
+    {% endif %}
+    
+    {% if error %}
+        <p class="error">❌ {{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <label>Pilih Owner ID:</label><br>
+        <select name="owner_chat_id" required>
+            {% for owner in owners %}
+                <option value="{{ owner }}">{{ owner }}</option>
+            {% endfor %}
+        </select><br><br>
+        
+        <button type="submit" onclick="return confirm('Yakin ingin menghapus SEMUA akun IVAS milik owner ini?')">Hapus Semua Akun IVAS</button>
+    </form>
+
+    <hr>
+    <a href="/admin">← Kembali ke Dashboard Admin</a>
+</body>
+</html>
