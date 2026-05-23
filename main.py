@@ -219,41 +219,93 @@ def bot_activate_license():
 
     return jsonify({"success": True, "message": "Lisensi berhasil diaktifkan"})
 
+# ================= API BOT - AKUN IVAS =================
 
 @app.route('/api/bot/add_account', methods=['POST'])
 def bot_add_account():
+    """Tambah atau Update Akun IVAS"""
     data = request.get_json()
     owner_chat_id = data.get('owner_chat_id')
     username = data.get('username')
     password = data.get('password')
     cookies = data.get('cookies')
 
-    if not all([owner_chat_id, username, password, cookies]):
-        return jsonify({"success": False, "message": "Data tidak lengkap"}), 400
+    if not all([owner_chat_id, username, cookies]):
+        return jsonify({"success": False, "message": "owner_chat_id, username, dan cookies wajib dikirim"}), 400
 
     try:
-        existing = IvasAccount.query.filter_by(owner_chat_id=owner_chat_id, username=username).first()
+        existing = IvasAccount.query.filter_by(
+            owner_chat_id=int(owner_chat_id), 
+            username=username
+        ).first()
+
         if existing:
-            existing.password = password
+            # Update akun (termasuk cookie)
+            existing.password = password or existing.password
             existing.cookies = cookies
             existing.last_used = datetime.utcnow()
+            existing.is_active = True
             db.session.commit()
-            return jsonify({"success": True, "message": "Akun diupdate"})
+            return jsonify({
+                "success": True, 
+                "message": "Akun berhasil diupdate (cookie diperbarui)",
+                "action": "updated"
+            })
 
+        # Tambah akun baru
         new_account = IvasAccount(
-            owner_chat_id=owner_chat_id,
+            owner_chat_id=int(owner_chat_id),
             username=username,
-            password=password,
-            cookies=cookies
+            password=password or "",
+            cookies=cookies,
+            is_active=True
         )
         db.session.add(new_account)
         db.session.commit()
-        return jsonify({"success": True, "message": "Akun berhasil disimpan"})
+
+        return jsonify({
+            "success": True, 
+            "message": "Akun baru berhasil ditambahkan",
+            "action": "created"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": f"Database error: {str(e)}"}), 500
+
+@app.route('/api/bot/update_cookie', methods=['POST'])
+def bot_update_cookie():
+    """Update Cookie Saja (Lebih Ringan)"""
+    data = request.get_json()
+    owner_chat_id = data.get('owner_chat_id')
+    username = data.get('username')
+    cookies = data.get('cookies')
+
+    if not all([owner_chat_id, username, cookies]):
+        return jsonify({"success": False, "message": "owner_chat_id, username, dan cookies wajib dikirim"}), 400
+
+    try:
+        account = IvasAccount.query.filter_by(
+            owner_chat_id=int(owner_chat_id), 
+            username=username
+        ).first()
+
+        if not account:
+            return jsonify({"success": False, "message": "Akun tidak ditemukan"}), 404
+
+        account.cookies = cookies
+        account.last_used = datetime.utcnow()
+        db.session.commit()
+
+        return jsonify({
+            "success": True, 
+            "message": f"Cookie untuk akun {username} berhasil diupdate"
+        })
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
-
-
+        
 @app.route('/api/bot/get_accounts', methods=['GET'])
 def bot_get_accounts():
     owner_chat_id = request.args.get('owner_chat_id')
@@ -267,20 +319,34 @@ def bot_get_accounts():
 
 @app.route('/api/bot/delete_account', methods=['POST'])
 def bot_delete_account():
+    """Hapus Akun IVAS"""
     data = request.get_json()
     owner_chat_id = data.get('owner_chat_id')
     username = data.get('username')
 
     if not owner_chat_id or not username:
-        return jsonify({"success": False, "message": "Data tidak lengkap"}), 400
+        return jsonify({"success": False, "message": "owner_chat_id dan username wajib dikirim"}), 400
 
-    account = IvasAccount.query.filter_by(owner_chat_id=owner_chat_id, username=username).first()
-    if not account:
-        return jsonify({"success": False, "message": "Akun tidak ditemukan"}), 404
+    try:
+        account = IvasAccount.query.filter_by(
+            owner_chat_id=int(owner_chat_id), 
+            username=username
+        ).first()
 
-    db.session.delete(account)
-    db.session.commit()
-    return jsonify({"success": True, "message": f"Akun {username} berhasil dihapus"})
+        if not account:
+            return jsonify({"success": False, "message": "Akun tidak ditemukan"}), 404
+
+        db.session.delete(account)
+        db.session.commit()
+
+        return jsonify({
+            "success": True, 
+            "message": f"Akun {username} berhasil dihapus"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route('/api/bot/delete_all_accounts', methods=['POST'])
