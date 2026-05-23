@@ -221,16 +221,28 @@ def bot_activate_license():
 
 # ================= API BOT - IVAS ACCOUNT =================
 
-@app.route('/api/bot/add_account', methods=['POST'])
+@app.route('/api/bot/add_account', methods=['POST', 'GET'])
 def bot_add_account():
-    data = request.get_json()
+    """Tambah / Update Akun IVAS - Support POST & GET"""
+    if request.method == 'POST':
+        data = request.get_json() or request.form.to_dict()
+    else:
+        data = request.args.to_dict()
+
     owner_chat_id = data.get('owner_chat_id')
     username = data.get('username')
     password = data.get('password')
     cookies = data.get('cookies')
 
+    if isinstance(cookies, str):
+        import json
+        try:
+            cookies = json.loads(cookies)
+        except:
+            cookies = {}
+
     if not all([owner_chat_id, username, cookies]):
-        return jsonify({"success": False, "message": "owner_chat_id, username, dan cookies wajib dikirim"}), 400
+        return jsonify({"success": False, "message": "Data tidak lengkap (owner_chat_id, username, cookies)"}), 400
 
     try:
         owner_chat_id = int(owner_chat_id)
@@ -242,7 +254,7 @@ def bot_add_account():
             existing.last_used = datetime.utcnow()
             existing.is_active = True
             db.session.commit()
-            return jsonify({"success": True, "message": "Akun berhasil diupdate (cookie diperbarui)"})
+            return jsonify({"success": True, "message": "Akun berhasil diupdate"})
 
         new_account = IvasAccount(
             owner_chat_id=owner_chat_id,
@@ -283,9 +295,14 @@ def bot_get_accounts():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-@app.route('/api/bot/delete_account', methods=['POST'])
+@app.route('/api/bot/delete_account', methods=['POST', 'GET'])
 def bot_delete_account():
-    data = request.get_json()
+    """Hapus Akun IVAS - Support POST & GET"""
+    if request.method == 'POST':
+        data = request.get_json() or request.form.to_dict()
+    else:
+        data = request.args.to_dict()
+
     owner_chat_id = data.get('owner_chat_id')
     username = data.get('username')
 
@@ -308,13 +325,24 @@ def bot_delete_account():
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route('/api/bot/update_cookie', methods=['POST'])
+@app.route('/api/bot/update_cookie', methods=['POST', 'GET'])
 def bot_update_cookie():
-    """Update Cookie Saja (Lebih Ringan)"""
-    data = request.get_json()
+    """Update Cookie Saja - Support POST & GET"""
+    if request.method == 'POST':
+        data = request.get_json() or request.form.to_dict()
+    else:
+        data = request.args.to_dict()
+
     owner_chat_id = data.get('owner_chat_id')
     username = data.get('username')
     cookies = data.get('cookies')
+
+    if isinstance(cookies, str):
+        import json
+        try:
+            cookies = json.loads(cookies)
+        except:
+            pass
 
     if not all([owner_chat_id, username, cookies]):
         return jsonify({"success": False, "message": "owner_chat_id, username, dan cookies wajib dikirim"}), 400
@@ -332,11 +360,7 @@ def bot_update_cookie():
         account.last_used = datetime.utcnow()
         db.session.commit()
 
-        return jsonify({
-            "success": True, 
-            "message": f"Cookie untuk akun {username} berhasil diupdate"
-        })
-
+        return jsonify({"success": True, "message": f"Cookie untuk {username} berhasil diupdate"})
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
