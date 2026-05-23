@@ -109,7 +109,53 @@ def check_page():
 def ping():
     return "✅ License Manager is Online!"
 
+# ================= FLARESOLVERR INTEGRATION =================
+FLARESOLVERR_URL = "https://flaresolverr.domainkamu.com"   # Ganti jika pakai domain atau port lain
 
+@app.route('/api/bot/flaresolverr', methods=['POST'])
+def flaresolverr_proxy():
+    """Proxy untuk bypass Cloudflare menggunakan FlareSolverr"""
+    try:
+        data = request.get_json()
+        target_url = data.get('url')
+        method = data.get('method', 'get').lower()
+        post_data = data.get('postData')
+
+        if not target_url:
+            return jsonify({"success": False, "message": "URL wajib dikirim"}), 400
+
+        payload = {
+            "cmd": f"request.{method}",
+            "url": target_url,
+            "maxTimeout": 120000,          # 2 menit
+            "returnOnlyCookies": False
+        }
+        if post_data:
+            payload["postData"] = post_data
+
+        response = requests.post(FLARESOLVERR_URL, json=payload, timeout=150)
+        
+        if response.status_code != 200:
+            return jsonify({"success": False, "message": f"FlareSolverr HTTP {response.status_code}"}), response.status_code
+
+        result = response.json()
+        if result.get("status") == "ok":
+            solution = result.get("solution", {})
+            return jsonify({
+                "success": True,
+                "cookies": solution.get("cookies", []),
+                "html": solution.get("response", ""),
+                "userAgent": solution.get("userAgent"),
+                "statusCode": solution.get("statusCode")
+            })
+        else:
+            return jsonify({"success": False, "message": result.get("message", "Unknown error")})
+
+    except requests.exceptions.ConnectionError:
+        return jsonify({"success": False, "message": "FlareSolverr tidak berjalan. Jalankan Docker terlebih dahulu."}), 503
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+        
 # ================= API BOT =================
 @app.route('/api/bot/check_owner', methods=['POST'])
 def bot_check_owner():
