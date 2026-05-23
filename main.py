@@ -379,7 +379,49 @@ def admin_delete_all_ivas():
     owner_list = [o[0] for o in owners]
     return render_template('admin_delete_ivas.html', owners=owner_list)
 
+# ================= ADMIN - IVAS ACCOUNT MANAGEMENT =================
 
+@app.route('/admin/ivas_accounts')
+def admin_ivas_accounts():
+    """Halaman daftar semua akun IVAS"""
+    owner_chat_id = request.args.get('owner_chat_id', type=int)
+    
+    query = IvasAccount.query.order_by(IvasAccount.added_at.desc())
+    
+    if owner_chat_id:
+        query = query.filter_by(owner_chat_id=owner_chat_id)
+    
+    accounts = query.all()
+    
+    # Ambil daftar owner
+    owners = db.session.query(IvasAccount.owner_chat_id).distinct().all()
+    owner_list = [o[0] for o in owners]
+    
+    return render_template('admin_ivas_accounts.html', 
+                         accounts=accounts, 
+                         owners=owner_list,
+                         selected_owner=owner_chat_id)
+
+
+@app.route('/admin/ivas/delete/<int:account_id>', methods=['POST'])
+def admin_delete_ivas_account(account_id):
+    """Hapus akun IVAS dari dashboard admin"""
+    account = IvasAccount.query.get_or_404(account_id)
+    
+    username = account.username
+    owner_id = account.owner_chat_id
+    
+    try:
+        db.session.delete(account)
+        db.session.commit()
+        return jsonify({
+            "success": True, 
+            "message": f"Akun {username} milik {owner_id} berhasil dihapus"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": str(e)}), 500
+        
 @app.route('/admin/generate-custom', methods=['GET', 'POST'])
 def generate_custom():
     if request.method == 'POST':
