@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import string
@@ -129,7 +129,6 @@ def bot_activate_license():
         license.used_at = datetime.utcnow()
         license.activated_by = "bot"
 
-        # Simpan ke ActivatedUser
         user = ActivatedUser.query.filter_by(chat_id=int(chat_id)).first()
         if not user:
             user = ActivatedUser(chat_id=int(chat_id))
@@ -299,6 +298,121 @@ def bot_update_cookie():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ================= ADMIN PANEL (DITAMBAHKAN) =================
+
+@app.route('/admin')
+def admin():
+    status = request.args.get('status', 'all')
+    query = LicenseKey.query
+    if status == 'active':
+        query = query.filter_by(is_used=True)
+    elif status == 'inactive':
+        query = query.filter_by(is_used=False)
+    keys = query.order_by(LicenseKey.created_at.desc()).all()
+    return render_template('admin.html', keys=keys, current_status=status, client_ip=get_client_ip())
+
+
+@app.route('/admin/generate-custom', methods=['GET', 'POST'])
+def generate_custom():
+    if request.method == 'POST':
+        try:
+            mode = request.form.get('mode')
+            keys = []
+            error = None
+
+            if mode == "custom":
+                prefix = request.form.get('prefix', '').strip().upper()
+                if not prefix:
+                    error = "❌ Nama lisensi tidak boleh kosong!"
+                elif LicenseKey.query.filter_by(key=prefix).first():
+                    error = f"❌ Nama lisensi '<strong>{prefix}</strong>' sudah pernah digunakan!"
+                else:
+                    db.session.add(LicenseKey(key=prefix, is_used=False))
+                    keys.append(prefix)
+                    db.session.commit()
+            else:
+                amount = int(request.form.get('amount', 5))
+                if amount > 100: amount = 100
+                for _ in range(amount):
+                    new_key = generate_key(20)
+                    while LicenseKey.query.filter_by(key=new_key).first():
+                        new_key = generate_key(20)
+                    db.session.add(LicenseKey(key=new_key, is_used=False))
+                    keys.append(new_key)
+                db.session.commit()
+
+            if error:
+                return render_template('generate_custom.html', error=error)
+            return render_template('generate_custom.html', keys=keys, success=True, mode=mode)
+
+        except Exception as e:
+            return render_template('generate_custom.html', error=f"Terjadi kesalahan: {str(e)}")
+
+    return render_template('generate_custom.html')
+
+
+@app.route('/admin/delete/key/<int:key_id>', methods=['POST'])
+def delete_key(key_id):
+    key = LicenseKey.query.get_or_404(key_id)
+    if key.is_used and key.used_by_chat_id:
+        user = ActivatedUser.query.filter_by(chat_id=key.used_by_chat_id).first()
+        if user: db.session.delete(user)
+        machines = MachineBinding.query.filter_by(chat_id=key.used_by_chat_id).all()
+        for m in machines: db.session.delete(m)
+    db.session.delete(key)
+    db.session.commit()
+    return redirect('/admin')
+
+
+@app.route('/admin/ivas_accounts')
+def admin_ivas_accounts():
+    owner_chat_id = request.args.get('owner_chat_id', type=int)
+    query = IvasAccount.query.order_by(IvasAccount.added_at.desc())
+    
+    if owner_chat_id:
+        query = query.filter_by(owner_chat_id=owner_chat_id)
+    
+    accounts = query.all()
+    owners = db.session.query(IvasAccount.owner_chat_id).distinct().all()
+    owner_list = [o[0] for o in owners]
+    
+    return render_template('admin_ivas_accounts.html', 
+                         accounts=accounts, 
+                         owners=owner_list,
+                         selected_owner=owner_chat_id)
+
+
+@app.route('/admin/ivas/delete/<int:account_id>', methods=['POST'])
+def admin_delete_ivas_account(account_id):
+    account = IvasAccount.query.get_or_404(account_id)
+    username = account.username
+    owner_id = account.owner_chat_id
+    try:
+        db.session.delete(account)
+        db.session.commit()
+        return jsonify({"success": True, "message": f"Akun {username} milik {owner_id} berhasil dihapus"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/admin/delete_all_ivas', methods=['GET', 'POST'])
+def admin_delete_all_ivas():
+    if request.method == 'POST':
+        owner_chat_id = request.form.get('owner_chat_id')
+        if owner_chat_id:
+            deleted = IvasAccount.query.filter_by(owner_chat_id=int(owner_chat_id)).delete()
+            db.session.commit()
+            return render_template('admin_delete_ivas.html', 
+                                 success=True, 
+                                 deleted_count=deleted, 
+                                 owner_id=owner_chat_id)
+    
+    owners = db.session.query(IvasAccount.owner_chat_id).distinct().all()
+    owner_list = [o[0] for o in owners]
+    return render_template('admin_delete_ivas.html', owners=owner_list)
 
 
 # ================= INIT DATABASE =================
