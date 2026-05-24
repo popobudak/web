@@ -155,7 +155,7 @@ def bot_get_all_licenses():
 
 @app.route('/api/bot/check_license_status', methods=['POST'])
 def bot_check_license_status():
-    """Cek status satu lisensi - SUPPORT MULTI BOT"""
+    """Cek status lisensi + rekomendasi aksi otomatis"""
     data = request.get_json() or request.form.to_dict()
     key = data.get('key')
     chat_id = data.get('chat_id')
@@ -166,30 +166,38 @@ def bot_check_license_status():
     try:
         license = LicenseKey.query.filter_by(key=key.strip()).first()
         if not license:
-            return jsonify({"success": False, "message": "Lisensi tidak ditemukan"}), 404
+            return jsonify({
+                "success": False,
+                "status": "not_found",
+                "message": "Lisensi tidak ditemukan"
+            }), 404
 
         response = {
             "success": True,
             "key": license.key,
             "is_used": license.is_used,
-            "owner_chat_id": license.used_by_chat_id,
+            "current_owner_chat_id": license.used_by_chat_id,
             "activated_by": license.activated_by or "bot",
             "used_at": license.used_at.strftime('%Y-%m-%d %H:%M:%S') if license.used_at else None,
-            "created_at": license.created_at.strftime('%Y-%m-%d %H:%M:%S') if license.created_at else None
         }
 
-        # Logika utama
         if license.is_used:
             if license.used_by_chat_id == int(chat_id):
+                # Lisensi milik bot ini
                 response["status"] = "valid"
                 response["message"] = "Lisensi valid dan terdaftar atas nama bot ini"
+                response["action"] = "none"
             else:
+                # Lisensi sudah dipakai oleh bot lain
                 response["status"] = "used_by_other"
-                response["message"] = "Lisensi sudah digunakan oleh bot lain. Silakan daftarkan ulang."
-                # Bot di sisi client bisa otomatis panggil activate_license
+                response["message"] = "Lisensi ini sudah digunakan oleh owner lain"
+                response["action"] = "rejected"
         else:
+            # Lisensi belum digunakan → sarankan aktivasi otomatis
             response["status"] = "available"
-            response["message"] = "Lisensi tersedia dan siap diaktifkan"
+            response["message"] = "Lisensi tersedia. Bot dapat mengaktifkannya otomatis."
+            response["action"] = "auto_activate"
+            response["recommendation"] = "Silakan panggil /api/bot/activate_license dengan key ini"
 
         return jsonify(response)
 
