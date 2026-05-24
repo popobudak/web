@@ -89,7 +89,7 @@ def ping():
 # ================= LICENSE API =================
 @app.route('/api/bot/validate_license', methods=['POST'])
 def bot_validate_license():
-    data = request.get_json()
+    data = request.get_json() or request.form.to_dict()
     key = data.get('key')
     chat_id = data.get('chat_id')
 
@@ -111,8 +111,7 @@ def bot_validate_license():
 
 @app.route('/api/bot/activate_license', methods=['POST'])
 def bot_activate_license():
-    """Endpoint yang dipanggil bot saat aktivasi pertama"""
-    data = request.get_json()
+    data = request.get_json() or request.form.to_dict()
     key = data.get('key')
     chat_id = data.get('chat_id')
 
@@ -143,7 +142,7 @@ def bot_activate_license():
 
 @app.route('/api/bot/check_owner', methods=['POST'])
 def bot_check_owner():
-    data = request.get_json()
+    data = request.get_json() or request.form.to_dict()
     chat_id = data.get('chat_id')
     if not chat_id:
         return jsonify({"success": False, "message": "Chat ID tidak boleh kosong"}), 400
@@ -155,8 +154,7 @@ def bot_check_owner():
             "key": license.key,
             "used_at": license.used_at.strftime('%Y-%m-%d %H:%M:%S') if license.used_at else None
         })
-    return jsonify({"success": True, "registered": False})
-
+    return jsonify({"success": True, "registered": False, "message": "Owner ID belum terdaftar"})
 
 # ================= IVAS ACCOUNT API =================
 @app.route('/api/bot/add_account', methods=['POST', 'GET'])
@@ -300,7 +298,7 @@ def bot_update_cookie():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# ================= ADMIN PANEL (DITAMBAHKAN) =================
+# ================= ADMIN PANEL =================
 
 @app.route('/admin')
 def admin():
