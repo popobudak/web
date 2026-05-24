@@ -87,6 +87,115 @@ def ping():
     return "✅ License Manager is Online!"
 
 # ================= LICENSE API =================
+
+@app.route('/api/bot/get_active_licenses', methods=['POST'])
+def bot_get_active_licenses():
+    """Mengambil semua lisensi yang sudah aktif (bisa diakses semua bot)"""
+    data = request.get_json() or request.form.to_dict()
+    chat_id = data.get('chat_id')
+
+    if not chat_id:
+        return jsonify({"success": False, "message": "chat_id diperlukan"}), 400
+
+    try:
+        active_licenses = LicenseKey.query.filter_by(is_used=True).all()
+        
+        result = []
+        for lic in active_licenses:
+            result.append({
+                "key": lic.key,
+                "chat_id": lic.used_by_chat_id,
+                "activated_by": lic.activated_by or "bot",
+                "used_at": lic.used_at.strftime('%Y-%m-%d %H:%M:%S') if lic.used_at else None,
+                "created_at": lic.created_at.strftime('%Y-%m-%d %H:%M:%S') if lic.created_at else None
+            })
+        
+        return jsonify({
+            "success": True,
+            "total_active": len(result),
+            "licenses": result
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/api/bot/get_all_licenses', methods=['POST'])
+def bot_get_all_licenses():
+    """Mengambil SEMUA lisensi (bisa diakses semua bot)"""
+    data = request.get_json() or request.form.to_dict()
+    chat_id = data.get('chat_id')
+
+    if not chat_id:
+        return jsonify({"success": False, "message": "chat_id diperlukan"}), 400
+
+    try:
+        all_licenses = LicenseKey.query.order_by(LicenseKey.created_at.desc()).all()
+        
+        result = []
+        for lic in all_licenses:
+            result.append({
+                "key": lic.key,
+                "is_used": lic.is_used,
+                "chat_id": lic.used_by_chat_id,
+                "activated_by": lic.activated_by or "bot",
+                "used_at": lic.used_at.strftime('%Y-%m-%d %H:%M:%S') if lic.used_at else None,
+                "created_at": lic.created_at.strftime('%Y-%m-%d %H:%M:%S') if lic.created_at else None
+            })
+        
+        return jsonify({
+            "success": True,
+            "total": len(result),
+            "total_active": len([l for l in all_licenses if l.is_used]),
+            "total_inactive": len([l for l in all_licenses if not l.is_used]),
+            "licenses": result
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/api/bot/check_license_status', methods=['POST'])
+def bot_check_license_status():
+    """Cek status satu lisensi - SUPPORT MULTI BOT"""
+    data = request.get_json() or request.form.to_dict()
+    key = data.get('key')
+    chat_id = data.get('chat_id')
+
+    if not key or not chat_id:
+        return jsonify({"success": False, "message": "Key dan Chat ID wajib dikirim"}), 400
+
+    try:
+        license = LicenseKey.query.filter_by(key=key.strip()).first()
+        if not license:
+            return jsonify({"success": False, "message": "Lisensi tidak ditemukan"}), 404
+
+        response = {
+            "success": True,
+            "key": license.key,
+            "is_used": license.is_used,
+            "owner_chat_id": license.used_by_chat_id,
+            "activated_by": license.activated_by or "bot",
+            "used_at": license.used_at.strftime('%Y-%m-%d %H:%M:%S') if license.used_at else None,
+            "created_at": license.created_at.strftime('%Y-%m-%d %H:%M:%S') if license.created_at else None
+        }
+
+        # Logika utama
+        if license.is_used:
+            if license.used_by_chat_id == int(chat_id):
+                response["status"] = "valid"
+                response["message"] = "Lisensi valid dan terdaftar atas nama bot ini"
+            else:
+                response["status"] = "used_by_other"
+                response["message"] = "Lisensi sudah digunakan oleh bot lain. Silakan daftarkan ulang."
+                # Bot di sisi client bisa otomatis panggil activate_license
+        else:
+            response["status"] = "available"
+            response["message"] = "Lisensi tersedia dan siap diaktifkan"
+
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/api/bot/validate_license', methods=['POST', 'GET'])
 def bot_validate_license():
     # Support both POST and GET
