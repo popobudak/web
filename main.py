@@ -155,7 +155,7 @@ def bot_get_all_licenses():
 
 @app.route('/api/bot/check_license_status', methods=['POST'])
 def bot_check_license_status():
-    """Cek status lisensi + rekomendasi aksi otomatis"""
+    """Cek status lisensi (support custom generate + auto activate recommendation)"""
     data = request.get_json() or request.form.to_dict()
     key = data.get('key')
     chat_id = data.get('chat_id')
@@ -169,7 +169,7 @@ def bot_check_license_status():
             return jsonify({
                 "success": False,
                 "status": "not_found",
-                "message": "Lisensi tidak ditemukan"
+                "message": "Lisensi tidak ditemukan atau tidak valid"
             }), 404
 
         response = {
@@ -179,25 +179,24 @@ def bot_check_license_status():
             "current_owner_chat_id": license.used_by_chat_id,
             "activated_by": license.activated_by or "bot",
             "used_at": license.used_at.strftime('%Y-%m-%d %H:%M:%S') if license.used_at else None,
+            "created_at": license.created_at.strftime('%Y-%m-%d %H:%M:%S') if license.created_at else None,
         }
 
         if license.is_used:
             if license.used_by_chat_id == int(chat_id):
-                # Lisensi milik bot ini
                 response["status"] = "valid"
                 response["message"] = "Lisensi valid dan terdaftar atas nama bot ini"
                 response["action"] = "none"
             else:
-                # Lisensi sudah dipakai oleh bot lain
                 response["status"] = "used_by_other"
-                response["message"] = "Lisensi ini sudah digunakan oleh owner lain"
+                response["message"] = "Lisensi sudah digunakan oleh owner lain"
                 response["action"] = "rejected"
         else:
-            # Lisensi belum digunakan → sarankan aktivasi otomatis
+            # Lisensi valid & belum digunakan (termasuk dari /admin/generate-custom)
             response["status"] = "available"
-            response["message"] = "Lisensi tersedia. Bot dapat mengaktifkannya otomatis."
+            response["message"] = "Lisensi valid dan tersedia untuk diaktifkan"
             response["action"] = "auto_activate"
-            response["recommendation"] = "Silakan panggil /api/bot/activate_license dengan key ini"
+            response["recommendation"] = "Bot dapat memanggil /api/bot/activate_license untuk mengaktifkan otomatis"
 
         return jsonify(response)
 
@@ -248,30 +247,58 @@ def bot_validate_license():
 
 @app.route('/api/bot/activate_license', methods=['POST'])
 def bot_activate_license():
+    """Endpoint untuk mengaktifkan lisensi (support custom generate)"""
     data = request.get_json() or request.form.to_dict()
     key = data.get('key')
     chat_id = data.get('chat_id')
 
     if not key or not chat_id:
-        return jsonify({"success": False, "message": "Data tidak lengkap"}), 400
+        return jsonify({"success": False, "message": "Data tidak lengkap (key & chat_id diperlukan)"}), 400
 
     license = LicenseKey.query.filter_by(key=key.strip()).first()
-    if not license or license.is_used:
-        return jsonify({"success": False, "message": "Lisensi tidak valid atau sudah digunakan"}), 403
+    
+    if not license:
+        return jsonify({"success": False, "message": "Lisensi tidak ditemukan"}), 404
 
+    # === Jika lisensi sudah aktif ===
+    if license.is_used:
+        if license.used_by_chat_id == int(chat_id):
+            return jsonify({
+                "success": True,
+                "message": "Lisensi sudah aktif atas nama bot ini",
+                "already_active": True,
+                "key": license.key,
+                "activated_at": license.used_at.strftime('%Y-%m-%d %H:%M:%S') if license.used_at else None
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Lisensi sudah digunakan oleh owner lain",
+                "already_used_by": license.used_by_chat_id
+            }), 403
+
+    # === Aktifkan lisensi baru ===
     try:
         license.is_used = True
         license.used_by_chat_id = int(chat_id)
         license.used_at = datetime.utcnow()
         license.activated_by = "bot"
 
+        # Auto create ActivatedUser jika belum ada
         user = ActivatedUser.query.filter_by(chat_id=int(chat_id)).first()
         if not user:
             user = ActivatedUser(chat_id=int(chat_id))
             db.session.add(user)
 
         db.session.commit()
-        return jsonify({"success": True, "message": "Lisensi berhasil diaktifkan"})
+
+        return jsonify({
+            "success": True,
+            "message": "Lisensi berhasil diaktifkan",
+            "key": license.key,
+            "activated_at": license.used_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
