@@ -87,26 +87,46 @@ def ping():
     return "✅ License Manager is Online!"
 
 # ================= LICENSE API =================
-@app.route('/api/bot/validate_license', methods=['POST'])
+@app.route('/api/bot/validate_license', methods=['POST', 'GET'])
 def bot_validate_license():
-    data = request.get_json() or request.form.to_dict()
+    # Support both POST and GET
+    if request.method == 'POST':
+        data = request.get_json() or request.form.to_dict()
+    else:
+        data = request.args.to_dict()
+
     key = data.get('key')
     chat_id = data.get('chat_id')
 
     if not key or not chat_id:
         return jsonify({"success": False, "message": "Key dan Chat ID wajib dikirim"}), 400
 
-    license = LicenseKey.query.filter_by(key=key.strip()).first()
+    license = LicenseKey.query.filter_by(key=str(key).strip()).first()
     if not license:
         return jsonify({"success": False, "message": "Lisensi tidak ditemukan"}), 404
 
     if license.is_used:
         if license.used_by_chat_id == int(chat_id):
-            return jsonify({"success": True, "is_valid": True, "is_used": True, "owner_match": True, "message": "Lisensi valid"})
+            return jsonify({
+                "success": True, 
+                "is_valid": True, 
+                "is_used": True, 
+                "owner_match": True, 
+                "message": "Lisensi valid"
+            })
         else:
-            return jsonify({"success": False, "is_valid": False, "message": "Lisensi sudah digunakan oleh Owner lain"}), 403
+            return jsonify({
+                "success": False, 
+                "is_valid": False, 
+                "message": "Lisensi sudah digunakan oleh Owner lain"
+            }), 403
 
-    return jsonify({"success": True, "is_valid": True, "is_used": False, "message": "Lisensi valid dan siap diaktifkan"})
+    return jsonify({
+        "success": True, 
+        "is_valid": True, 
+        "is_used": False, 
+        "message": "Lisensi valid dan siap diaktifkan"
+    })
 
 
 @app.route('/api/bot/activate_license', methods=['POST'])
